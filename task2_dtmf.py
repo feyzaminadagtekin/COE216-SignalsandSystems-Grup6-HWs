@@ -5,7 +5,7 @@ import sounddevice as sd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# DTMF Standart Frekans Tablosu [cite: 48, 49, 60]
+# DTMF Standart Frekans Tablosu 
 DTMF_TABLE = {
     '1': (697, 1209), '2': (697, 1336), '3': (697, 1477), 'A': (697, 1633),
     '4': (770, 1209), '5': (770, 1336), '6': (770, 1477), 'B': (770, 1633),
@@ -19,19 +19,19 @@ class DTMFApp:
         self.root.title("COE216 - DTMF Arayüzü & Spektrum Analizi")
         self.root.geometry("700x900") # Pencere sığma sorunu için boyut sabitlendi
         
-        self.fs = 8000 # Standart örnekleme hızı [cite: 68]
-        self.duration = 0.4 # Tuş basım süresi [cite: 69]
+        self.fs = 8000 # Standart örnekleme hızı 
+        self.duration = 0.4 # Tuş basım süresi 
         self.setup_ui()
 
     def setup_ui(self):
-        # Grafik Alanı (Üst Kısım) [cite: 55, 85]
+        # Grafik Alanı (Üst Kısım) 
         self.fig, (self.ax_t, self.ax_f) = plt.subplots(2, 1, figsize=(6, 7))
         plt.subplots_adjust(hspace=0.4)
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Tuş Takımı (Alt Kısım) [cite: 53]
+        # Tuş Takımı (Alt Kısım) 
         style = ttk.Style()
         style.configure('TButton', font=('Arial', 11, 'bold'))
         
@@ -49,17 +49,17 @@ class DTMFApp:
         fl, fh = DTMF_TABLE[key]
         t = np.linspace(0, self.duration, int(self.fs * self.duration), endpoint=False)
         
-        # Sinyal Sentezi ve Normalizasyon (Clipping önlemek için 0.5 ile çarpıldı) [cite: 48, 73, 75]
+        # Sinyal Sentezi ve Normalizasyon (Clipping önlemek için 0.5 ile çarpıldı) 
         sig = (np.sin(2 * np.pi * fl * t) + np.sin(2 * np.pi * fh * t)) * 0.5
-        sd.play(sig, self.fs) # Sesi çal [cite: 76]
+        sd.play(sig, self.fs) # Sesi çal 
         
-        # Zaman Grafiği Güncelleme [cite: 55]
+        # Zaman Grafiği Güncelleme 
         self.ax_t.clear()
         self.ax_t.plot(t[:250], sig[:250], 'b') # Net görünüm için bir kesit
         self.ax_t.set_title(f"Zaman Düzlemi (Tuş: {key})", fontsize=10, fontweight='bold')
         self.ax_t.grid(True, alpha=0.3)
         
-        # Spektrum (FFT) Güncelleme - Artı Puan [cite: 85]
+        # Spektrum (FFT) Güncelleme 
         self.ax_f.clear()
         f = np.fft.fftfreq(len(sig), 1/self.fs)
         mag = np.abs(np.fft.fft(sig))
