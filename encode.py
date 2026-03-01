@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.io.wavfile import write
 import sounddevice as sd
+
 # Parametreler
 fs = 44100  # Daha standart bir kalite için 8000'den 44100'e çıkardık
 duration = 0.04
@@ -19,30 +20,47 @@ for low in low_freqs:
             freq_map[alphabet[index]] = (low, high)
             index += 1
 
-# Kullanıcıdan metin al
-text = input("Sese çevrilecek metni girin: ").upper()
+print("--- DTMF Sinyal Sentezleyici (Çıkmak için metin sorulduğunda 'q' tuşuna basın) ---")
 
-signal_list = [] # Hız için liste kullanıp sonra birleştirmek daha iyidir
-t = np.linspace(0, duration, int(fs*duration), endpoint=False)
-
-for char in text:
-    if char in freq_map:
-        f1, f2 = freq_map[char]
-        # Genliği 0.5 ile çarparak toplamın 1.0'ı geçmemesini sağladık (Normalizasyon)
-        tone = 0.5 * (np.sin(2*np.pi*f1*t) + np.sin(2*np.pi*f2*t))
-        signal_list.append(tone)
-    elif char == " ":
-        # Boşluk karakteri için sessizlik ekle
-        signal_list.append(np.zeros(int(fs*duration)))
-
-# Tüm parçaları birleştir
-if signal_list:
-    final_signal = np.concatenate(signal_list)
-    # WAV dosyası oluştur
-    write("encoded.wav", fs, final_signal.astype(np.float32))
-    print("encoded.wav dosyası başarıyla oluşturuldu.")
-else:
-    print("Geçerli bir metin girilmedi.")
+while True:
+    # Kullanıcıdan metin al
+    text = input("\nSese çevrilecek metni girin: ").upper()
     
-sd.play(final_signal, fs)
-sd.wait()
+    # Çıkış kontrolü
+    if text == 'Q':
+        print("Programdan çıkılıyor. Görüşürüz!")
+        break
+        
+    # Kullanıcıdan dosya adı al
+    filename = input("Kaydedilecek dosyanın adını girin (örn: ses1.wav): ")
+    
+    # Kullanıcı .wav uzantısını unutursa otomatik ekle
+    if not filename.endswith(".wav"):
+        filename += ".wav"
+
+    signal_list = [] # Hız için liste kullanıp sonra birleştirmek daha iyidir
+    t = np.linspace(0, duration, int(fs*duration), endpoint=False)
+
+    for char in text:
+        if char in freq_map:
+            f1, f2 = freq_map[char]
+            # Genliği 0.5 ile çarparak toplamın 1.0'ı geçmemesini sağladık (Normalizasyon)
+            tone = 0.5 * (np.sin(2*np.pi*f1*t) + np.sin(2*np.pi*f2*t))
+            signal_list.append(tone)
+        elif char == " ":
+            # Boşluk karakteri için sessizlik ekle
+            signal_list.append(np.zeros(int(fs*duration)))
+
+    # Tüm parçaları birleştir
+    if signal_list:
+        final_signal = np.concatenate(signal_list)
+        # WAV dosyası oluştur
+        write(filename, fs, final_signal.astype(np.float32))
+        print(f"'{filename}' dosyası başarıyla oluşturuldu!")
+        
+        # Sesi çal
+        print("Sinyal çalınıyor...")
+        sd.play(final_signal, fs)
+        sd.wait()
+    else:
+        print("Geçerli bir metin girilmedi. Lütfen sadece Türkçe alfabe harflerini ve boşluk kullanın.")

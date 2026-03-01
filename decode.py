@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.io.wavfile import write, read
+from scipy.io.wavfile import read
 from scipy.fft import fft
+import matplotlib.pyplot as plt
 
 fs = 8000
 duration = 0.04
@@ -36,10 +37,21 @@ def decode_wav(filename):
     decoded_text = ""
     last_char = ""
 
+    # Grafik için ilk geçerli karakterin verilerini saklayacağız
+    first_valid_segment = None
+    first_valid_spectrum = None
+    first_valid_freqs = None
+    first_valid_char = None
+    first_valid_f1 = None
+    first_valid_f2 = None
+
     for i in range(0, len(signal), samples_per_char):
         segment = signal[i:i+samples_per_char]
         if len(segment) < samples_per_char:
             continue
+            
+        # Grafikte zaman düzlemini pencerelemeden önceki saf haliyle göstermek için kopyalıyoruz
+        raw_segment = segment.copy()
 
         window = np.hamming(len(segment))
         segment = segment * window
@@ -57,7 +69,6 @@ def decode_wav(filename):
             continue
 
         # 2. ÇÖZÜM: Sinyali Düşük ve Yüksek bantlara bölerek en yüksek 2 tepeyi buluyoruz.
-        # Bu sayede yan yana duran iki frekansı yanlışlıkla seçme hatası ortadan kalkıyor.
         low_band = np.where((freqs >= 400) & (freqs <= 1600))
         high_band = np.where((freqs >= 1900) & (freqs <= 3600))
         
@@ -77,14 +88,56 @@ def decode_wav(filename):
                 min_error = error
                 best_char = char
 
-        # (İsteğe bağlı) Aynı harfin tekrar tekrar okunmasını engelle (Debouncing)
+        # Aynı harfin tekrar tekrar okunmasını engelle (Debouncing)
         if best_char and best_char != last_char:
             decoded_text += best_char
             last_char = best_char
+            
+            # Grafik çizdirmek için sadece İLK yakalanan harfin verilerini kaydet
+            if first_valid_segment is None:
+                first_valid_segment = raw_segment
+                first_valid_spectrum = spectrum
+                first_valid_freqs = freqs
+                first_valid_char = best_char
+                first_valid_f1 = f1_detected
+                first_valid_f2 = f2_detected
 
     print("\nDecoded Text:", decoded_text)
+    
+    # -------- GRAFİK ÇİZDİRME BÖLÜMÜ --------
+    if first_valid_segment is not None:
+        plt.figure(figsize=(10, 8))
+        
+        # Grafik 1: Tespit edilen ilk karakterin zaman düzlemi
+        plt.subplot(2, 1, 1)
+        t_segment = np.linspace(0, duration, len(first_valid_segment), endpoint=False)
+        plt.plot(t_segment, first_valid_segment, color='blue')
+        plt.title(f"Zaman Düzlemi - İlk Tespit Edilen Karakter: '{first_valid_char}' (Süre: 40ms)")
+        plt.xlabel("Zaman (s)")
+        plt.ylabel("Genlik")
+        plt.grid(True, alpha=0.3)
+
+        # Grafik 2: Tespit edilen ilk karakterin Frekans Spektrumu (FFT)
+        plt.subplot(2, 1, 2)
+        plt.plot(first_valid_freqs, first_valid_spectrum, color='red')
+        
+        # Bulunan tepe noktalarını grafikte işaretle
+        plt.axvline(x=first_valid_f1, color='black', linestyle='--', alpha=0.5, label=f'Low Peak: {first_valid_f1:.1f} Hz')
+        plt.axvline(x=first_valid_f2, color='black', linestyle='--', alpha=0.5, label=f'High Peak: {first_valid_f2:.1f} Hz')
+        
+        plt.title(f"Frekans Spektrumu (FFT) - Karakter: '{first_valid_char}'")
+        plt.xlabel("Frekans (Hz)")
+        plt.ylabel("Genlik")
+        plt.xlim(0, 4000)
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("\nGrafik çizdirilecek geçerli bir sinyal bulunamadı.")
 
 # ---------------- MENU ----------------
 print(" Sesi metne çevir (Decode)")
-filename = input("Wav dosya adını girin: ")
+filename = input("Wav dosya adını girin (örn: encoded.wav): ")
 decode_wav(filename)
