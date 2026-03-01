@@ -3,7 +3,7 @@ from scipy.io.wavfile import write
 import sounddevice as sd
 # Parametreler
 fs = 44100  # Daha standart bir kalite için 8000'den 44100'e çıkardık
-duration = 0.2  # 0.04 (40ms) çok kısa, kulağın seçmesi için 200ms (0.2) daha iyidir
+duration = 0.04
 
 alphabet = list("ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ ")
 
