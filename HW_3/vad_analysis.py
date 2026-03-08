@@ -56,16 +56,17 @@ for i in range(num_frames):
     if len(frame) < frame_size:
         break
 
-    frame = frame * window
-    frames.append(frame)
+    # Hamming uygulanmış çerçeveyi analiz için saklıyoruz
+    windowed_frame = frame * window
+    frames.append(windowed_frame)
 
     # Energy
-    e = np.sum(frame ** 2)
+    e = np.sum(windowed_frame ** 2)
     energy.append(e)
 
     # Zero Crossing Rate
-    zero_cross = np.sum(np.abs(np.diff(np.sign(frame)))) / 2
-    z = zero_cross / len(frame)
+    zero_cross = np.sum(np.abs(np.diff(np.sign(windowed_frame)))) / 2
+    z = zero_cross / len(windowed_frame)
     zcr.append(z)
 
 energy = np.array(energy)
@@ -86,14 +87,17 @@ threshold_energy = noise_energy * 3
 # -----------------------------
 vad = energy > threshold_energy
 
-# Hangover smoothing
-for i in range(len(vad)):
+# Hangover smoothing (Zincirleme reaksiyonu önlemek için kopya kullanıyoruz)
+vad_smoothed = vad.copy()
 
+for i in range(len(vad)):
     if not vad[i]:
         prev = vad[max(0, i-HANGOVER):i]
-
+        
         if np.sum(prev) > 0:
-            vad[i] = True
+            vad_smoothed[i] = True
+
+vad = vad_smoothed
 
 # -----------------------------
 # VOICED / UNVOICED
@@ -104,32 +108,29 @@ voiced = np.zeros(len(vad))
 unvoiced = np.zeros(len(vad))
 
 for i in range(len(vad)):
-
     if vad[i]:
-
         if energy[i] > threshold_energy and zcr[i] < zcr_threshold:
             voiced[i] = 1
         else:
             unvoiced[i] = 1
 
 # -----------------------------
-# RECONSTRUCT SPEECH
+# RECONSTRUCT SPEECH (CIZIRTI ÇÖZÜMÜ)
 # -----------------------------
-clean_signal = []
+# Sinyalin orijinal boyutunda bir maske oluşturuyoruz
+keep_samples = np.zeros(len(signal), dtype=bool)
 
-for i in range(len(vad)):
-
+for i in range(num_frames):
     if vad[i]:
+        start = i * hop_size
+        end = start + frame_size
+        # Sadece konuşma olan bölgeleri maskeliyoruz
+        keep_samples[start:end] = True
 
-        if len(clean_signal) == 0:
-            clean_signal.extend(frames[i])
+# Orijinal sinyalden sadece maskelenmiş (konuşma olan) kısımları alıyoruz
+clean_signal = signal[keep_samples]
 
-        else:
-            clean_signal.extend(frames[i][int(frame_size*OVERLAP):])
-
-clean_signal = np.array(clean_signal)
-
-# save cleaned audio
+# Temizlenmiş ve sessizliği atılmış sesi kaydediyoruz
 sf.write("clean_speech.wav", clean_signal, fs)
 
 # -----------------------------
@@ -141,9 +142,9 @@ new_duration = len(clean_signal) / fs
 compression = ((original_duration - new_duration) / original_duration) * 100
 
 print("\n----- RESULTS -----")
-print("Original Duration:", round(original_duration,2), "seconds")
-print("New Duration:", round(new_duration,2), "seconds")
-print("Compression:", round(compression,2), "%")
+print("Original Duration:", round(original_duration, 2), "seconds")
+print("New Duration:", round(new_duration, 2), "seconds")
+print("Compression:", round(compression, 2), "%")
 
 # -----------------------------
 # TIME AXIS
@@ -153,40 +154,45 @@ time = np.arange(len(signal)) / fs
 # -----------------------------
 # PLOTS
 # -----------------------------
-plt.figure(figsize=(12,10))
+plt.figure(figsize=(12, 10))
 
 # Original signal
-plt.subplot(4,1,1)
-plt.plot(time, signal)
+plt.subplot(4, 1, 1)
+plt.plot(time, signal, color='gray')
 plt.title("Original Audio Signal")
+plt.xlabel("Time (s)")
+plt.ylabel("Amplitude")
 
 # Energy
-plt.subplot(4,1,2)
-plt.plot(energy)
-plt.axhline(threshold_energy, color='r')
+plt.subplot(4, 1, 2)
+plt.plot(energy, color='blue')
+plt.axhline(threshold_energy, color='red', linestyle='--', label='Noise Threshold')
 plt.title("Short-Time Energy")
+plt.legend()
 
 # ZCR
-plt.subplot(4,1,3)
-plt.plot(zcr)
-plt.axhline(zcr_threshold, color='r')
+plt.subplot(4, 1, 3)
+plt.plot(zcr, color='purple')
+plt.axhline(zcr_threshold, color='red', linestyle='--', label='ZCR Threshold')
 plt.title("Zero Crossing Rate")
+plt.legend()
 
 # VAD + Voiced/Unvoiced
-plt.subplot(4,1,4)
+plt.subplot(4, 1, 4)
+plt.plot(time, signal, color='lightgray') # Sinyali arka plana silik çiziyoruz
 
 for i in range(len(vad)):
-
+    start_time = (i * hop_size) / fs
+    end_time = (start_time + (frame_size / fs))
+    
     if voiced[i]:
-        plt.axvspan(i, i+1, color="green", alpha=0.5)
-
+        plt.axvspan(start_time, end_time, color="green", alpha=0.4)
     elif unvoiced[i]:
-        plt.axvspan(i, i+1, color="yellow", alpha=0.5)
+        plt.axvspan(start_time, end_time, color="yellow", alpha=0.4)
 
-    else:
-        plt.axvspan(i, i+1, color="gray", alpha=0.3)
-
-plt.title("Speech Classification (Green=Voiced, Yellow=Unvoiced, Gray=Silence)")
+plt.title("Speech Classification (Green=Voiced, Yellow=Unvoiced)")
+plt.xlabel("Time (s)")
+plt.ylabel("Amplitude")
 
 plt.tight_layout()
 plt.show()
