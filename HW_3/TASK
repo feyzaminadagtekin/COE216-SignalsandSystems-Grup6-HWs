@@ -1,0 +1,107 @@
+import librosa
+import numpy as np
+import soundfile as sf
+import matplotlib.pyplot as plt
+from scipy.signal import medfilt
+
+# --- 1. DOSYA OKUMA VE NORMALİZASYON ---
+audio_path = "kendi_ses_kaydin.wav" # Buraya kendi dosyanın adını yaz
+y, sr = librosa.load(audio_path, sr=None) 
+y = y / np.max(np.abs(y)) # Sinyali [-1, 1] aralığına normalize etme [cite: 85, 86]
+
+# --- 2. PENCERELEME (WINDOWING) VE ÖRTÜŞME (OVERLAP) ---
+frame_length_ms = 20
+overlap_ms = 10
+frame_length = int(sr * (frame_length_ms / 1000)) # 20ms pencere [cite: 41]
+hop_length = int(sr * (overlap_ms / 1000))        # 10ms (50%) örtüşme [cite: 42]
+
+# Sinyali pencerelere bölme
+frames = librosa.util.frame(y, frame_length=frame_length, hop_length=hop_length)
+hamming_window = np.hamming(frame_length) # Spektral sızıntıyı önlemek için Hamming [cite: 88, 89]
+windowed_frames = frames * hamming_window[:, np.newaxis]
+
+# --- 3. ENERJİ VE ZCR (SIFIR GEÇİŞ ORANI) HESAPLAMALARI ---
+# Enerji: Her pencerenin karesel ortalaması
+energy = np.sum(windowed_frames**2, axis=0) / frame_length
+
+# ZCR: Sıfır geçiş oranı
+zcr = librosa.feature.zero_crossing_rate(y, frame_length=frame_length, hop_length=hop_length)[0]
+
+# --- 4. DİNAMİK GÜRÜLTÜ EŞİĞİ (NOISE THRESHOLD) ---
+# İlk 150 ms'yi (sessizlik) baz alarak gürültü eşiğini dinamik belirleme [cite: 45, 46, 47]
+silence_duration_ms = 150
+silence_frames = int((silence_duration_ms / 1000) * sr / hop_length)
+noise_energy_mean = np.mean(energy[:silence_frames])
+
+# Güvenlik payı (margin) ekleyerek dinamik eşik oluşturma [cite: 93]
+energy_threshold = noise_energy_mean * 2.0 
+
+# --- 5. VAD (VOICE ACTIVITY DETECTION) VE HANGOVER ---
+vad_mask = (energy > energy_threshold).astype(int) # Eşiği geçenler 1 (Konuşma), diğerleri 0 [cite: 50, 51]
+
+# Hangover Time: Kısa kopmaları önlemek için Median Filter uygulama [cite: 52, 53, 95, 96]
+vad_mask_smoothed = medfilt(vad_mask, kernel_size=5) 
+
+# --- 6. VOICED VE UNVOICED SINIFLANDIRMASI ---
+zcr_threshold = 0.08 # ZCR eşiğini kayıtlarına göre optimize edebilirsin
+
+# Voiced: Enerji YÜKSEK, ZCR DÜŞÜK [cite: 65, 66]
+voiced_mask = (vad_mask_smoothed == 1) & (zcr < zcr_threshold) & (energy > energy_threshold * 1.5)
+
+# Unvoiced: ZCR ÇOK YÜKSEK [cite: 67, 68]
+unvoiced_mask = (vad_mask_smoothed == 1) & (zcr >= zcr_threshold)
+
+# --- 7. SESSİZLİĞİ ATMA VE KAYDETME (OUTPUT PRODUCTION) ---
+# Etiketlenen konuşma kısımlarını örnek (sample) bazında yeniden oluşturma [cite: 56, 57]
+sample_mask = np.zeros_like(y)
+for i, is_speech in enumerate(vad_mask_smoothed):
+    if is_speech == 1:
+        start = i * hop_length
+        end = start + frame_length
+        sample_mask[start:end] = 1
+
+y_speech = y[sample_mask == 1]
+sf.write("output_speech_only.wav", y_speech, sr)
+
+# Sıkıştırma Oranı Hesabı [cite: 58]
+compression_ratio = (1 - (len(y_speech) / len(y))) * 100
+print(f"Sıkıştırma Oranı: %{compression_ratio:.2f}")
+
+# --- 8. GÖRSELLEŞTİRME (VISUALIZATION) ---
+t_signal = np.arange(len(y)) / sr
+t_frames = np.arange(len(energy)) * hop_length / sr
+
+plt.figure(figsize=(12, 10))
+
+# 1. Orijinal Sinyal ve VAD/Voiced/Unvoiced Renklendirmesi [cite: 76, 78, 79]
+plt.subplot(3, 1, 1)
+plt.plot(t_signal, y, color='gray', alpha=0.6, label='Orijinal Sinyal')
+for i in range(len(vad_mask_smoothed)):
+    if voiced_mask[i]:
+        plt.axvspan(i * hop_length / sr, (i * hop_length + frame_length) / sr, color='green', alpha=0.3)
+    elif unvoiced_mask[i]:
+        plt.axvspan(i * hop_length / sr, (i * hop_length + frame_length) / sr, color='yellow', alpha=0.3)
+plt.title("Zaman Düzleminde Orijinal Sinyal (Yeşil: Voiced, Sarı: Unvoiced)")
+plt.xlabel("Zaman (s)")
+plt.ylabel("Genlik")
+
+# 2. Enerji Grafiği [cite: 77]
+plt.subplot(3, 1, 2)
+plt.plot(t_frames, energy, color='blue', label='Kısa Zamanlı Enerji')
+plt.axhline(energy_threshold, color='red', linestyle='--', label='Dinamik Gürültü Eşiği')
+plt.title("Pencere Bazlı Enerji")
+plt.xlabel("Zaman (s)")
+plt.ylabel("Enerji")
+plt.legend()
+
+# 3. ZCR Grafiği [cite: 77]
+plt.subplot(3, 1, 3)
+plt.plot(t_frames, zcr, color='purple', label='Zero Crossing Rate (ZCR)')
+plt.axhline(zcr_threshold, color='red', linestyle='--', label='ZCR Eşiği')
+plt.title("Sıfır Geçiş Oranı (ZCR)")
+plt.xlabel("Zaman (s)")
+plt.ylabel("ZCR")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
